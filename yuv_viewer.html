@@ -1,0 +1,209 @@
+<html>
+<head>
+<title>YUV Viewer</title>
+</head>
+<body>
+<form action="javascript:load_size()">
+Please specify the width and height first:<br/> 
+Width: <input id="w" type="number" name="width">
+Height: <input id="h" type="number" name="height">
+<input type="submit" value="ok">
+</form>
+
+<input id="browseOpen" type="file"/> ( or try: <button type="button" id ="sam1">Sample 1</button> <button type="button" id="sam2">Sample 2</button>)
+<br/><br/>
+<canvas id="myCanvas" width="500" height="500" style="border:1px solid #000000;"></canvas>
+<br/>
+<input type="range" id="frame_idx" min=1 value =1 style="width: 300px">
+<br/>
+<div id="info"></div>
+<div id="pixels_info" style="border:1px solid #000000;"></></div>
+<script src="https://code.jquery.com/jquery-1.11.3.js" type="text/javascript"></script>
+<script type="text/javascript">
+var rgb = [];
+var raw_data = [];
+var height = 144;
+var width = 176;
+var frame_no = 1;
+var frame_size = height*width;
+var frame_pixels = frame_size*1.5; 
+var tot_frames = 0;
+
+//function test(x,y) {
+//	var tt = [];
+//	tt.push(rgb[(y*width+x)*4]);
+//	tt.push(parseInt(y/2)*parseInt(width/2) + parseInt(x/2));
+//	tt.push(tmp[height*width+ parseInt(y/2)*parseInt(width/2) + parseInt(x/2)]);
+//	return tt;
+//}
+
+function load_size() {
+	height = document.getElementById("h").value;
+	width = document.getElementById("w").value;
+	frame_size = height*width;
+	frame_pixels = frame_size*1.5; 
+	document.getElementById("myCanvas").width = width;
+	document.getElementById("myCanvas").height = height;
+}
+
+var fileInput = document.getElementById("browseOpen");
+var display = document.getElementById('display');
+
+fileInput.onchange = function () {            
+	var fr = new FileReader();
+	fr.onloadend = function () {
+		process_dat(this.result);
+	};
+	fr.readAsBinaryString(this.files[0]);
+};
+
+$(document).ready(function(){
+	$("button").click(function(){
+		id = 1;
+		document.getElementById("w").value = 352;
+		document.getElementById("h").value = 288;
+		the_url = "foreman_cif.yuv"
+		
+		if (this.id=="sam2") {
+			id = 2;
+			document.getElementById("w").value = 176;
+			document.getElementById("h").value = 144;
+			the_url = "foreman_qcif.yuv";
+		}
+		
+		load_size();
+		
+		$.ajax({
+			url: the_url,
+			beforeSend: function( xhr ) {
+				//xhr.overrideMimeType( 'text/plain; charset=iso-8859-1' );
+				xhr.overrideMimeType('text/plain; charset=x-user-defined');
+			},
+			type: "GET",
+			processData: false,
+			success: function(result){
+				process_dat(result);
+		  }
+		});
+	});
+});
+
+function refresh_pic() {
+	rgb = yuv2rgb(raw_data.slice(frame_pixels*(frame_no-1),frame_pixels*frame_no));
+	imageLoaded(rgb);
+}
+
+function process_dat(raw) {
+	var dat = [];
+	for (var i = 0; i < raw.length; i++) {
+		var byteStr = (raw.charCodeAt(i)& 255).toString(10);
+		//var byteStr = raw.charCodeAt(i).toString(10);
+		dat.push(byteStr);
+	}
+	raw_data = dat;
+	frame_no = 1;
+	dat = dat.slice(frame_pixels*(frame_no-1),frame_pixels*frame_no);
+	rgb = yuv2rgb(dat);
+	imageLoaded(rgb);
+	tot_frames = raw.length/frame_pixels;
+	document.getElementById("info").innerHTML = "Total Frames: "+tot_frames+"<br/>"+"Current Frame: "+frame_no;
+	document.getElementById("frame_idx").max = tot_frames;
+	document.getElementById("frame_idx").value = 1;
+	document.getElementById("frame_idx").oninput = function() { 
+		frame_no = document.getElementById("frame_idx").value;
+		document.getElementById("info").innerHTML = "Total Frames: "+tot_frames+"<br/>"+"Current Frame: "+frame_no;
+		refresh_pic();
+	};
+	document.getElementById("myCanvas").onmousemove = function(e) {
+		var pos = findPos(this);
+		var x = e.pageX - pos.x;
+		var y = e.pageY - pos.y;
+		
+		if (x<0 || y<0 || x>=width || y>=height)
+			return;
+		
+		document.getElementById("pixels_info").innerHTML = "("+x+", "+y+")"+"<br/>";
+		
+		for (var i=0;i<Math.min(16,height-y);i++) {
+			for (var j=0;j<Math.min(16,width-x);j++) {
+				idx = ((y+i)*width+x)*4+4*j;
+				
+				//idx = (y*width+x)*4+4*j;
+				if ((''+rgb[idx]).length==1)
+					document.getElementById("pixels_info").innerHTML += "00";
+				else if ((''+rgb[idx]).length==2)
+					document.getElementById("pixels_info").innerHTML += "0";
+					
+				document.getElementById("pixels_info").innerHTML += rgb[idx]+" ";
+			}
+			//y = y+1;
+			document.getElementById("pixels_info").innerHTML += "<br/>";
+		}
+	};
+}
+
+function findPos(obj) {
+    var curleft = 0, curtop = 0;
+    if (obj.offsetParent) {
+        do {
+            curleft += obj.offsetLeft;
+            curtop += obj.offsetTop;
+        } while (obj = obj.offsetParent);
+        return { x: curleft, y: curtop };
+    }
+    return undefined;
+}
+
+function yuv2rgb(dat) {
+	rgb1= [];
+
+	for (y = 0; y < height; y++) {
+		for (x = 0; x < width; x++) {
+			Y = dat[y*width+x];
+			Cb = dat[height*width+ parseInt(y/2)*parseInt(width/2) + parseInt(x/2)];
+			Cr = dat[height*width+ parseInt(height*width/4) +parseInt(y/2)*parseInt(width/2) + parseInt(x/2)];
+			
+			r = 1.164*(Y-16)+1.596*(Cr-128);
+			g = 1.164*(Y-16)-0.392*(Cb-128)-0.813*(Cr-128);
+			b = 1.164*(Y-16)+2.017*(Cb-128);
+			a = 255;
+			
+			if (r<0) r=0;
+			if (g<0) g=0;
+			if (b<0) b=0;
+			
+			if (r>255) r=255;
+			if (g>255) g=255;
+			if (b>255) b=255;
+			
+			rgb1.push(Math.round(r));
+			rgb1.push(Math.round(g));
+			rgb1.push(Math.round(b));
+			rgb1.push(a);
+		}
+	}
+	
+	return rgb1;
+}
+
+function imageLoaded(dat) {
+	element = document.getElementById("myCanvas");
+	c = element.getContext("2d");
+	c.clearRect(0, 0, width, height);
+	
+	imageData = c.getImageData(0, 0, width, height);
+
+	for (y = 0; y < height; y++) {
+		idx = y * width * 4; // *4 for 4 ints per pixel
+		for (x = 0; x < width; x++) {
+			imageData.data[idx] = dat[idx++];
+			imageData.data[idx] = dat[idx++];
+			imageData.data[idx] = dat[idx++];
+			imageData.data[idx] = dat[idx++];
+		}
+	}
+	c.putImageData(imageData, 0, 0);
+}
+</script>
+</body>
+</html>
